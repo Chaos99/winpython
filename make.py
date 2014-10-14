@@ -68,6 +68,7 @@ def get_drives():
 
 
 def get_nsis_exe():
+    #return "C:\\Projekte\\winpython\\NSIS\\makensis.exe"
     """Return NSIS executable"""
     localdir = osp.join(sys.prefix, os.pardir, os.pardir)
     for drive in get_drives():
@@ -76,6 +77,7 @@ def get_nsis_exe():
                         drive+r'PortableApps\NSISPortable',
                         osp.join(localdir, 'NSISPortableANSI'),
                         osp.join(localdir, 'NSISPortable'),
+                        osp.dirname(osp.abspath(__file__))
                         ):
             for subdirname in ('.', 'App'):
                 exe = osp.join(dirname, subdirname, 'NSIS', 'makensis.exe')
@@ -101,7 +103,7 @@ def replace_in_nsis_file(fname, data):
             if start not in ('Icon', 'OutFile') and not start.startswith('!'):
                 start = '!define ' + start
             if line.startswith(start):
-                lines[idx] = line[:len(start)+1] + ('"%s"' % text) + '\n'
+                lines[idx] = line[:len(start)+1] + ('"{0}"'.format(text)) + '\n'
     fd = open(fname, 'w')
     fd.writelines(lines)
     fd.close()
@@ -115,7 +117,7 @@ def build_nsis(srcname, dstname, data):
             ] + list(data)
     replace_in_nsis_file(dstname, data)
     try:
-        retcode = subprocess.call('"%s" -V2 "%s"' % (NSIS_EXE, dstname),
+        retcode = subprocess.call('"{0}" -V2 "{1}"'.format(NSIS_EXE, dstname),
                                   shell=True, stdout=sys.stderr)
         if retcode < 0:
             print("Child was terminated by signal", -retcode, file=sys.stderr)
@@ -184,34 +186,34 @@ class WinPythonDistribution(object):
         for name, ver in installed_tools:
             metadata = wppm.get_package_metadata('tools.ini', name)
             url, desc = metadata['url'], metadata['description']
-            tools += ['[%s](%s) | %s | %s' % (name, url, ver, desc)]
-        packages = ['[%s](%s) | %s | %s'
-                    % (pack.name, pack.url, pack.version, pack.description)
+            tools += ['[{0}]({1]) | {2} | {3}'.format(name, url, ver, desc)]
+        packages = ['[{0}]({1}) | {2} | {3}'.format(
+                    pack.name, pack.url, pack.version, pack.description)
                     for pack in sorted(self.installed_packages,
                                        key=lambda p: p.name.lower())]
         python_desc = 'Python programming language with standard library'
-        return """## WinPython %s
+        return """## WinPython {0}
 
-The following packages are included in WinPython v%s.
+The following packages are included in WinPython v{1}.
 
 ### Tools
 
 Name | Version | Description
 -----|---------|------------
-%s
+{2}
 
 ### Python packages
 
 Name | Version | Description
 -----|---------|------------
-[Python](http://www.python.org/) | %s | %s
-%s""" % (self.winpyver, self.winpyver, '\n'.join(tools),
+[Python](http://www.python.org/) | {3} | {4}
+{5}""".format(self.winpyver, self.winpyver, '\n'.join(tools),
          self.python_fullversion, python_desc, '\n'.join(packages))
 
     @property
     def winpyver(self):
         """Return WinPython version (with release level!)"""
-        return '%s.%d%s' % (self.python_fullversion, self.build_number,
+        return '{0}.{1}{2}'.format(self.python_fullversion, self.build_number,
                             self.release_level)
 
     @property
@@ -222,12 +224,12 @@ Name | Version | Description
     @property
     def winpy_arch(self):
         """Return WinPython architecture"""
-        return '%dbit' % self.distribution.architecture
+        return '{0}bit'.format(self.distribution.architecture)
 
     @property
     def pyqt_arch(self):
         """Return distribution architecture, in PyQt format: x32/x64"""
-        return 'x%d' % self.distribution.architecture
+        return 'x{0}'.format(self.distribution.architecture)
    
     @property
     def py_arch(self):
@@ -274,7 +276,7 @@ Name | Version | Description
                     return osp.abspath(osp.join(path, fname))
         else:
             raise RuntimeError(
-                'Could not found required package matching %s' % pattern)
+                'Could not found required package matching {0}'.format(pattern))
 
     def install_package(self, pattern):
         """Install package matching pattern"""
@@ -322,7 +324,7 @@ Name | Version | Description
 
         fname = osp.join(self.winpydir, osp.splitext(name)[0]+'.nsi')
 
-        data = [('WINPYDIR', '$EXEDIR\%s' % self.python_name),
+        data = [('WINPYDIR', '$EXEDIR\{0}'.format(self.python_name)),
                 ('WINPYVER', self.winpyver),
                 # ('JULIA_HOME','$EXEDIR\%s' % r'\tools\Julia\bin'),
                 # ('JULIA', '$EXEDIR\%s' % r'\tools\Julia\bin\julia.exe'),
@@ -354,8 +356,8 @@ Name | Version | Description
         changedir = ''
         if workdir is not None:
             workdir = osp.join('%WINPYDIR%', workdir)
-            changedir = r"""cd %s
-""" % workdir
+            changedir = r"""cd {0}
+""".format(workdir)
         if script_name:
             script_name = ' ' + script_name
         self.create_batch_script(name, r"""@echo off
@@ -369,7 +371,7 @@ call %~dp0env.bat
         fname = osp.join(portable_dir, 'installer-tmp.nsi')
         data = (('DISTDIR', self.winpydir),
                 ('ARCH', self.winpy_arch),
-                ('VERSION', '%s.%d' % (self.python_fullversion,
+                ('VERSION', '{0}.{1}'.format(self.python_fullversion,
                                        self.build_number)),
                 ('RELEASELEVEL', self.release_level),)
         build_nsis('installer.nsi', fname, data)
@@ -415,8 +417,8 @@ call %~dp0env.bat
             try:
                 pack = wppm.Package(fname)
             except NotImplementedError:
-                print("WARNING: package %s is not supported"
-                      % osp.basename(fname), file=sys.stderr)
+                print("WARNING: package {0} is not supported".format(
+                      osp.basename(fname), file=sys.stderr))
                 continue
             packages.append(pack)
         all_duplicates = []
@@ -426,38 +428,38 @@ call %~dp0env.bat
             all_duplicates.append(pack.name)
             duplicates = [p for p in packages if p.name == pack.name]
             if len(duplicates) > 1:
-                print("WARNING: duplicate packages %s (%s)" %
-                      (pack.name, ", ".join([p.version for p in duplicates])),
+                print("WARNING: duplicate packages {0} ({1})".format(
+                      (pack.name, ", ".join([p.version for p in duplicates]))),
                       file=sys.stderr)
 
     def _install_required_packages(self):
         """Installing required packages"""
         print("Installing required packages")
-        self.install_package('pywin32-([0-9\.]*[a-z]*).%s-py%s.exe'
-                             % (self.py_arch, self.python_version))
-        self.install_package('setuptools-([0-9\.]*[a-z]*[0-9]?).%s(-py%s)?.exe'
-                             % (self.py_arch, self.python_version))
+        self.install_package('pywin32-([0-9\.]*[a-z]*).{0}-py{1}.exe'.format(
+                             self.py_arch, self.python_version))
+        self.install_package('setuptools-([0-9\.]*[a-z]*[0-9]?).{0}(-py{1})?.exe'.format(
+                             self.py_arch, self.python_version))
         # Install First these two packages to support wheel format
-        self.install_package('pip-([0-9\.]*[a-z]*[0-9]?).%s(-py%s)?.exe'
-                             % (self.py_arch, self.python_version))
+        self.install_package('pip-([0-9\.]*[a-z]*[0-9]?).{0}(-py{1})?.exe'.format(
+                             self.py_arch, self.python_version))
         self.install_package('wheel-([0-9\.]*[a-z]*[0-9]?).tar.gz')
 
         self.install_package(
-            'spyder(lib)?-([0-9\.]*[a-z]*[0-9]?).%s(-py%s)?.exe'
-            % (self.py_arch, self.python_version))
+            'spyder(lib)?-([0-9\.]*[a-z]*[0-9]?).{0}(-py{1})?.exe'.format(
+            self.py_arch, self.python_version))
         # PyQt module is now like :PyQt4-4.10.4-gpl-Py3.4-Qt4.8.6-x32.exe
         self.install_package(
-            'PyQt4-([0-9\.\-]*)-gpl-Py%s-Qt([0-9\.\-]*)%s.exe'
-            % (self.python_version, self.pyqt_arch))
+            'PyQt4-([0-9\.\-]*)-gpl-Py{0}-Qt([0-9\.\-]*){1}.exe'.format(
+            self.python_version, self.pyqt_arch))
         self.install_package(
-            'PyQwt-([0-9\.]*)-py%s-%s-([a-z0-9\.\-]*).exe'
-            % (self.python_version, self.pyqt_arch))
+            'PyQwt-([0-9\.]*)-py{0}-{1}-([a-z0-9\.\-]*).exe'.format(
+            self.python_version, self.pyqt_arch))
 
         # Install 'main packages' first (was before Wheel idea, keep for now)             
         for happy_few in['numpy-MKL', 'scipy', 'matplotlib', 'pandas']:
             self.install_package(
-                '%s-([0-9\.]*[a-z]*[0-9]?).%s(-py%s)?.exe'
-                % (happy_few, self.py_arch, self.python_version))
+                '{0}-([0-9\.]*[a-z]*[0-9]?).{1}(-py{2})?.exe'.format(
+                happy_few, self.py_arch, self.python_version))
 
     def _install_all_other_packages(self):
         """Try to install all other packages in instdir"""
@@ -467,8 +469,8 @@ call %~dp0env.bat
                 try:
                     self.install_package(fname)
                 except NotImplementedError:
-                    print("WARNING: unable to install package %s"
-                          % osp.basename(fname), file=sys.stderr)
+                    print("WARNING: unable to install package {0}".format(
+                           osp.basename(fname)), file=sys.stderr)
 
     def _copy_dev_tools(self):
         """Copy dev tools"""
@@ -537,13 +539,13 @@ call %~dp0env.bat
         if osp.isfile(osp.join(self.python_dir, 'Scripts', ipython_exe)):
             self.create_launcher('IPython Qt Console.exe', 'ipython.ico',
                                  command='${WINPYDIR}\pythonw.exe',
-                                 args='%s qtconsole --matplotlib=inline' %
-                                      ipython_scr,
+                                 args='{0]} qtconsole --matplotlib=inline'.format(
+                                      ipython_scr),
                                  workdir='${WINPYDIR}\Scripts')
             self.create_launcher('IPython Notebook.exe', 'ipython.ico',
                                  command='${WINPYDIR}\python.exe',
-                                 args='%s notebook --matplotlib=inline' %
-                                      ipython_scr,
+                                 args='{0} notebook --matplotlib=inline'.format(
+                                      ipython_scr),
                                  workdir='${WINPYDIR}\Scripts')
         if osp.isfile(self.winpydir + self.THG_PATH):
             self.create_launcher('TortoiseHg.exe', 'tortoisehg.ico',
@@ -796,15 +798,14 @@ call %~dp0register_python.bat --all""")
         self.python_fname = self.get_package_fname(
                             r'python-([0-9\.rc]*)(\.amd64)?\.msi')
         self.python_name = osp.basename(self.python_fname)[:-4]
-        distname = 'win%s' % self.python_name
+        distname = 'win{0}'.format(self.python_name)
         vlst = re.match(r'winpython-([0-9\.]*)', distname
                         ).groups()[0].split('.')
         self.python_version = '.'.join(vlst[:2])
         self.python_fullversion = '.'.join(vlst[:3])
 
         # Create the WinPython base directory
-        self._print("Creating WinPython %s base directory"
-                    % self.python_version)
+        self._print("Creating WinPython {0} base directory".format(self.python_version))
         self.winpydir = osp.join(self.target, distname)
         if osp.isdir(self.winpydir) and remove_existing \
            and not self.simulation:
@@ -846,7 +847,7 @@ call %~dp0register_python.bat --all""")
         # Writing package index
         self._print("Writing package index")
         fname = osp.join(self.winpydir, os.pardir,
-                         'WinPython-%s.txt' % self.winpyver)
+                         'WinPython-{0}.txt'.format(self.winpyver))
         open(fname, 'w').write(self.package_index_wiki)
         # Copy to winpython/changelogs
         shutil.copyfile(fname, osp.join(CHANGELOGS_DIR, osp.basename(fname)))
@@ -891,7 +892,7 @@ def make_winpython(build_number, release_level, architecture,
     basedir = basedir if basedir is not None else utils.BASE_DIR
     assert basedir is not None, "The *basedir* directory must be specified"
     assert architecture in (32, 64)
-    utils.print_box("Making WinPython %dbits" % architecture)
+    utils.print_box("Making WinPython {0}".format(architecture))
     suffix = '.win32' if architecture == 32 else '.win-amd64'
     packdir = osp.join(basedir, 'packages' + suffix)
     assert osp.isdir(packdir)
@@ -946,8 +947,8 @@ if __name__ == '__main__':
 
     #make_all(1, '', pyver='3.4', rootdir=r'D:\Winpython',
     #         verbose=False, archis=(32, ))
-    make_all(2, '', pyver='3.4', rootdir=r'D:\Winpython',
-              verbose=False, archis=(64, ))
+    make_all(2, '', pyver='3.4', rootdir=r'C:\Projekte\winpython',
+              verbose=True, archis=(64, ))
     #make_all(2, '', pyver='3.3', rootdir=r'D:\Winpython',
     #          verbose=False, archis=(32, ))
     #make_all(2, '', pyver='3.3', rootdir=r'D:\Winpython',
