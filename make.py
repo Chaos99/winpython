@@ -130,16 +130,18 @@ class WinPythonDistribution(object):
     WINMERGE_PATH = r'\tools\WinMerge\WinMergeU.exe'
     MINGW32_PATH = r'\tools\mingw32\bin'
 
-    def __init__(self, build_number, release_level, target, instdir,
-                 srcdir=None, toolsdirs=None, verbose=False, simulation=False,
-                 rootdir=None, install_options=None):
+    def __init__(self, build_number, release_level, target, instdirs,
+                 srcdirs=None, toolsdirs=None, verbose=False, simulation=False,
+                 rootdir=None, install_options=None, flavor=''):
         assert isinstance(build_number, int)
         assert isinstance(release_level, str)
         self.build_number = build_number
         self.release_level = release_level
         self.target = target
-        self.instdir = instdir
-        self.srcdir = srcdir
+        self.instdirs = instdirs
+        self.srcdirs = srcdirs
+        if srcdirs is None:
+            self.srcdirs = []
         if toolsdirs is None:
             toolsdirs = []
         self._toolsdirs = toolsdirs
@@ -154,11 +156,12 @@ class WinPythonDistribution(object):
         self.simulation = simulation
         self.rootdir = rootdir  # addded to build from winpython
         self.install_options = install_options
+        self.flavor = flavor
 
     @property
     def package_index_wiki(self):
         """Return Package Index page in Wiki format"""
-        installed_tools = [('gettext', '0.14.4'), ('SciTE', '3.3.7')]   
+        installed_tools = [('gettext', '0.14.4'), ('SciTE', '3.3.7')]
 
         def get_tool_path(relpath, checkfunc):
             if self.simulation:
@@ -192,7 +195,7 @@ class WinPythonDistribution(object):
         python_desc = 'Python programming language with standard library'
         return """## WinPython %s
 
-The following packages are included in WinPython v%s.
+The following packages are included in WinPython v%s%s.
 
 ### Tools
 
@@ -205,7 +208,7 @@ Name | Version | Description
 Name | Version | Description
 -----|---------|------------
 [Python](http://www.python.org/) | %s | %s
-%s""" % (self.winpyver, self.winpyver, '\n'.join(tools),
+%s""" % (self.winpyver , self.winpyver, self.flavor, '\n'.join(tools),
          self.python_fullversion, python_desc, '\n'.join(packages))
 
     @property
@@ -228,7 +231,7 @@ Name | Version | Description
     def pyqt_arch(self):
         """Return distribution architecture, in PyQt format: x32/x64"""
         return 'x%d' % self.distribution.architecture
-   
+
     @property
     def py_arch(self):
         """Return distribution architecture, in Python distutils format:
@@ -266,8 +269,8 @@ Name | Version | Description
         return [osp.join(osp.dirname(osp.abspath(__file__)), 'tools')] + self._toolsdirs
 
     def get_package_fname(self, pattern):
-        """Get package matching pattern in instdir"""
-        for path in (self.instdir, self.srcdir):
+        """Get package matching pattern in instdirs"""
+        for path in (self.instdirs + self.srcdirs):
             for fname in os.listdir(path):
                 match = re.match(pattern, fname)
                 if match is not None:
@@ -297,7 +300,7 @@ Name | Version | Description
         fd = open(osp.join(scriptdir, name), 'w')
         fd.write(contents)
         fd.close()
-   
+
     def create_launcher(self, name, icon, command=None,
                         args=None, workdir=None, settingspath=None):
         """Create exe launcher with NSIS"""
@@ -369,8 +372,8 @@ call %~dp0env.bat
         fname = osp.join(portable_dir, 'installer-tmp.nsi')
         data = (('DISTDIR', self.winpydir),
                 ('ARCH', self.winpy_arch),
-                ('VERSION', '%s.%d' % (self.python_fullversion,
-                                       self.build_number)),
+                ('VERSION', '%s.%d%s' % (self.python_fullversion,
+                                       self.build_number, self.flavor)),
                 ('RELEASELEVEL', self.release_level),)
         build_nsis('installer.nsi', fname, data)
         self._print_done()
@@ -408,7 +411,10 @@ call %~dp0env.bat
         """Check packages for duplicates or unsupported packages"""
         print("Checking packages")
         packages = []
-        for fname0 in os.listdir(self.srcdir) + os.listdir(self.instdir):
+        my_plist = []
+        for m in (self.srcdirs +  self.instdirs):
+            my_plist += os.listdir(m)
+        for fname0 in my_plist:
             fname = self.get_package_fname(fname0)
             if fname == self.python_fname:
                 continue
@@ -453,16 +459,19 @@ call %~dp0env.bat
             'PyQwt-([0-9\.]*)-py%s-%s-([a-z0-9\.\-]*).exe'
             % (self.python_version, self.pyqt_arch))
 
-        # Install 'main packages' first (was before Wheel idea, keep for now)             
+        # Install 'main packages' first (was before Wheel idea, keep for now)
         for happy_few in['numpy-MKL', 'scipy', 'matplotlib', 'pandas']:
             self.install_package(
                 '%s-([0-9\.]*[a-z]*[0-9]?).%s(-py%s)?.exe'
                 % (happy_few, self.py_arch, self.python_version))
 
     def _install_all_other_packages(self):
-        """Try to install all other packages in instdir"""
+        """Try to install all other packages in instdirs"""
         print("Installing other packages")
-        for fname in os.listdir(self.srcdir) + os.listdir(self.instdir):
+        my_list = []
+        for m in (self.srcdirs +  self.instdirs):
+            my_list += os.listdir(m)
+        for fname in my_list:
             if osp.basename(fname) != osp.basename(self.python_fname):
                 try:
                     self.install_package(fname)
@@ -636,6 +645,41 @@ echo to use julia_magic from Ipython, type "Ipython notebook" instead.
 cmd.exe /k
 """)
 
+
+        self.create_batch_script('Add_or_removeLine.vbs',r"""
+'from http://blogs.technet.com/b/heyscriptingguy/archive/2007/09/07/
+' how-can-i-remove-any-line-in-a-text-file-that-contains-a-specified-string-value.aspx
+If WScript.Arguments.Count <> 3 then
+  WScript.Echo "usage: Add_or_removeLine.vbs filename word_to_find line_to_add" &_
+  vbNewLine & "or         Add_or_removeLine.vbs filename word_to_find -remove"
+  WScript.Quit
+end If
+
+Set colArgs = WScript.Arguments
+Add_or_removeLine colArgs(0), colArgs(1), colArgs(2) 
+
+function Add_or_removeLine(strFilename, strFind, strAction)
+    Set inputFile = CreateObject("Scripting.FileSystemObject").OpenTextFile(strFilename, 1)
+    a_change = False
+    Do Until inputFile.AtEndOfStream
+        strLine = inputFile.ReadLine
+        If InStr(strLine, strFind) = 0 Then
+            result_text= result_text & strLine & vbNewLine 
+        else
+           a_change = True
+           if strAction <> "-remove" then result_text= result_text & strLine & vbNewLine & strAction & vbNewLine
+        End If
+    Loop
+    inputFile.Close
+
+    if a_change then
+        Set outputFile = CreateObject("Scripting.FileSystemObject").OpenTextFile(strFilename,2,true)
+        outputFile.Write result_text
+        outputFile.Close
+    end if    
+end function
+""")
+
         self.create_batch_script('start_with_r.bat', r"""@echo off
 call %~dp0env.bat
 
@@ -643,31 +687,46 @@ rem ******************
 rem R part (supposing you install it in \tools\R of winpython)
 rem ******************
 set tmp_Rdirectory=R
-if not exist "%WINPYDIR%\..\tools\%tmp_Rdirectory%\bin" goto r_end
+if not exist "%WINPYDIR%\..\tools\%tmp_Rdirectory%\bin" goto r_bad
 
 rem  R_HOME for rpy2, R_HOMEBIN for PATH
 set R_HOME=%WINPYDIR%\..\tools\%tmp_Rdirectory%\
 set R_HOMEbin=%WINPYDIR%\..\tools\%tmp_Rdirectory%\bin
 
-
 set SYS_PATH=%PATH%
 set PATH=%SYS_PATH%;%R_HOMEbin%
 
 echo "r!"
-echo "if you want it to be on your winpython icon, update %WINPYDIR%\settings\winpython.ini with"
-echo "PATH=%path%"
-echo " "
-echo to launch Ipython with R, type now "Ipython notebook"
-rem Ipython notebook
+echo "We are going to  update %WINPYDIR%\settings\winpython.ini with"
+echo "R_HOME = %R_HOME%"
+echo "(relaunch this batch, if you move your winpython)"
+pause
+
+%~dp0Add_or_removeLine.vbs ..\settings\winpython.ini  "R_HOME = " -remove
+
+rem Handle case when winpython.ini is not already created
+if exist "..\settings\winpython.ini" goto ini_exists 
+
+echo [debug]>"..\settings\winpython.ini"
+echo state = disabled>>"..\settings\winpython.ini"
+echo [environment]>>"..\settings\winpython.ini"
+
+:ini_exists 
+%~dp0Add_or_removeLine.vbs ..\settings\winpython.ini  "[environment]" "R_HOME = %R_HOME%"
+goto r_end
+
+:r_bad 
+
+echo directory "%WINPYDIR%\..\tools\%tmp_Rdirectory%\bin" not found
+echo please install R at "%WINPYDIR%\..\tools\%tmp_Rdirectory%" 
+pause
 
 :r_end
-
-cmd.exe /k
 """)
         # Prepare a live patch on python (shame we need it) to have mingw64ok
         patch_distutils = ""
         if self.py_arch == "win-amd64":
-            patch_distutils=r"""
+            patch_distutils = r"""
 %~dp0Find_And_replace.vbs "%WINPYDIR%\Lib\distutils\cygwinccompiler.py" "-O -W" "-O -DMS_WIN64 -W"
 
 set WINPYXX=%WINPYVER:~0,1%%WINPYVER:~2,1%
@@ -690,8 +749,9 @@ REM generate python.34 import file
 ..\tools\mingw32\bin\dlltool -D python%WINPYXX%.dll -d python%WINPYXX%.def -l libpython%WINPYXX%.dll.a
 move /Y libpython%WINPYXX%.dll.a libs
 del python%WINPYXX%.def
-"""            
-        self.create_batch_script('Find_And_replace.vbs',r"""
+"""
+
+        self.create_batch_script('Find_And_replace.vbs', r"""
 ' from http://stackoverflow.com/questions/15291341/
 '             a-batch-file-to-read-a-file-and-replace-a-string-with-a-new-one
 
@@ -714,7 +774,7 @@ function FindAndReplace(strFilename, strFind, strReplace)
         outputFile.Write result_text
         outputFile.Close
         Set outputFile = Nothing
-    end if    
+    end if
 end function
 """)
 
@@ -777,16 +837,16 @@ call %~dp0register_python.bat --all""")
                      workdir=r'Lib\site-packages\PyQt4\examples\demos\qtdemo')
 
         # pre-run wingw batch
-        print ('now pre-running extra mingw')
+        print('now pre-running extra mingw')
         filepath = osp.join(self.winpydir, 'scripts', 'make_cython_use_mingw.bat')
-        p = subprocess.Popen(filepath, shell=True, stdout = subprocess.PIPE)
+        p = subprocess.Popen(filepath, shell=True, stdout=subprocess.PIPE)
         stdout, stderr = p.communicate()
 
         self._print_done()
 
     def make(self, remove_existing=True):
         """Make WinPython distribution in target directory from the installers
-        located in instdir
+        located in instdirs
 
         remove_existing=True: (default) install all from scratch
         remove_existing=False: only for test purpose (launchers/scripts)"""
@@ -837,16 +897,16 @@ call %~dp0register_python.bat --all""")
         if not self.simulation:
             self._create_launchers()
             self._create_batch_scripts()
-    
+
         if remove_existing and not self.simulation:
             self._print("Cleaning up distribution")
             self.distribution.clean_up()
             self._print_done()
-  
+
         # Writing package index
         self._print("Writing package index")
         fname = osp.join(self.winpydir, os.pardir,
-                         'WinPython-%s.txt' % self.winpyver)
+                         'WinPython%s-%s.txt' % (self.flavor, self.winpyver))
         open(fname, 'w').write(self.package_index_wiki)
         # Copy to winpython/changelogs
         shutil.copyfile(fname, osp.join(CHANGELOGS_DIR, osp.basename(fname)))
@@ -854,7 +914,8 @@ call %~dp0register_python.bat --all""")
 
         # Writing changelog
         self._print("Writing changelog")
-        diff.write_changelog(self.winpyver, rootdir=self.rootdir)
+        diff.write_changelog(self.winpyver, rootdir=self.rootdir,
+                             flavor=self.flavor)
         self._print_done()
 
 
@@ -874,7 +935,7 @@ def rebuild_winpython(basedir=None, verbose=False, archis=(32, 64)):
 def make_winpython(build_number, release_level, architecture,
                    basedir=None, verbose=False, remove_existing=True,
                    create_installer=True, simulation=False, rootdir=None,
-                   install_options=None):
+                   install_options=None, flavor=''):
     """Make WinPython distribution, for a given base directory and
     architecture:
 
@@ -893,11 +954,21 @@ def make_winpython(build_number, release_level, architecture,
     assert architecture in (32, 64)
     utils.print_box("Making WinPython %dbits" % architecture)
     suffix = '.win32' if architecture == 32 else '.win-amd64'
-    packdir = osp.join(basedir, 'packages' + suffix)
-    assert osp.isdir(packdir)
-    srcdir = osp.join(basedir, 'packages.src')
-    assert osp.isdir(srcdir)
-    builddir = osp.join(basedir, 'build')
+    packdir1 = osp.join(basedir, 'packages' + suffix)
+    assert osp.isdir(packdir1)
+    packdirs = [packdir1]
+    srcdir1 = osp.join(basedir, 'packages.src')
+    assert osp.isdir(srcdir1)
+    srcdirs = [srcdir1]
+    # add flavor src and binary packages
+    if flavor != '':
+        packdir2 = osp.join(basedir, flavor, 'packages' + suffix)
+        if osp.isdir(packdir2):
+            packdirs.append(packdir2)
+        srcdir2 = osp.join(basedir, flavor, 'packages.src')
+        if osp.isdir(srcdir2):
+            srcdirs.append(srcdir2)
+    builddir = osp.join(basedir, 'build' + flavor)
     if not osp.isdir(builddir):
         os.mkdir(builddir)
     toolsdir1 = osp.join(basedir, 'tools')
@@ -906,11 +977,19 @@ def make_winpython(build_number, release_level, architecture,
     toolsdir2 = osp.join(basedir, 'tools' + suffix)
     if osp.isdir(toolsdir2):
         toolsdirs.append(toolsdir2)
+    # add flavor tools in basedirxx\flavor\tools and tools+suffix
+    if flavor != '':
+        toolsdir3 = osp.join(basedir, flavor, 'tools')
+        toolsdir4 = osp.join(basedir, flavor, 'tools' + suffix)
+        for flavor_tools in [toolsdir3, toolsdir4]:
+            if osp.isdir(flavor_tools):
+                toolsdirs.append(flavor_tools)
+        
     dist = WinPythonDistribution(build_number, release_level,
-                                 builddir, packdir, srcdir, toolsdirs,
+                                 builddir, packdirs, srcdirs, toolsdirs,
                                  verbose=verbose, simulation=simulation,
                                  rootdir=rootdir,
-                                 install_options=install_options)
+                                 install_options=install_options, flavor=flavor)
     dist.make(remove_existing=remove_existing)
     if create_installer and not simulation:
         dist.create_installer()
@@ -920,7 +999,7 @@ def make_winpython(build_number, release_level, architecture,
 def make_all(build_number, release_level, pyver,
              rootdir=None, simulation=False, create_installer=True,
              verbose=False, remove_existing=True, archis=(32, 64),
-             install_options=['--no-deps']):
+             install_options=['--no-deps'], flavor=''):
     """Make WinPython for both 32 and 64bit architectures:
 
     make_all(build_number, release_level, pyver, rootdir, simulation=False,
@@ -937,7 +1016,8 @@ def make_all(build_number, release_level, pyver,
     for architecture in archis:
         make_winpython(build_number, release_level, architecture, basedir,
                        verbose, remove_existing, create_installer, simulation,
-                       rootdir=rootdir, install_options=install_options)
+                       rootdir=rootdir, install_options=install_options,
+                       flavor=flavor)
 
 
 if __name__ == '__main__':
@@ -946,8 +1026,8 @@ if __name__ == '__main__':
 
     #make_all(1, '', pyver='3.4', rootdir=r'D:\Winpython',
     #         verbose=False, archis=(32, ))
-    make_all(2, '', pyver='3.4', rootdir=r'D:\Winpython',
-              verbose=False, archis=(64, ))
+    make_all(1, '', pyver='3.4', rootdir=r'D:\Winpython',
+              verbose=False, archis=(64, ), flavor='')
     #make_all(2, '', pyver='3.3', rootdir=r'D:\Winpython',
     #          verbose=False, archis=(32, ))
     #make_all(2, '', pyver='3.3', rootdir=r'D:\Winpython',
